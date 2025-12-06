@@ -1,29 +1,35 @@
 from typing import Optional
 from loguru import logger
 from config.settings import settings
-import openai
+import google.generativeai as genai
 
 
 class LLMClient:
-    """Client for LLM API (OpenAI)"""
-    
+    """Client for LLM API (Google Gemini)"""
+
     def __init__(self, api_key: str = None, model: str = None):
         """
         Initialize LLM client
-        
+
         Args:
-            api_key: OpenAI API key
-            model: Model name to use
+            api_key: Google API key
+            model: Model name to use (default: gemini-pro)
         """
-        self.api_key = api_key or settings.openai_api_key
-        self.model = model or settings.llm_model
-        
+        self.api_key = api_key or settings.google_api_key
+        self.model_name = model or settings.llm_model
+        self.model = None
+
         if not self.api_key:
-            logger.warning("OpenAI API key not provided. LLM features will not work.")
+            logger.warning("Google API key not provided. LLM features will not work.")
         else:
-            openai.api_key = self.api_key
-            logger.info(f"LLM client initialized with model: {self.model}")
-    
+            try:
+                genai.configure(api_key=self.api_key)
+                self.model = genai.GenerativeModel(self.model_name)
+                logger.info(f"LLM client initialized with model: {self.model_name}")
+            except Exception as e:
+                logger.error(f"Failed to initialize Gemini: {e}")
+                self.model = None
+
     def generate_answer(
         self,
         question: str,
@@ -33,50 +39,57 @@ class LLMClient:
     ) -> Optional[str]:
         """
         Generate answer using LLM
-        
+
         Args:
             question: User's question
             context: Retrieved context
             temperature: Sampling temperature
             max_tokens: Maximum tokens in response
-            
+
         Returns:
             Generated answer or None if failed
         """
-        if not self.api_key:
-            logger.error("Cannot generate answer: OpenAI API key not configured")
+        if not self.model:
+            logger.error("Cannot generate answer: Gemini model not configured")
             return None
-        
+
         temp = temperature or settings.llm_temperature
         max_tok = max_tokens or settings.llm_max_tokens
-        
+
         # Build prompt
         system_prompt = self._build_system_prompt()
         user_prompt = self._build_user_prompt(question, context)
-        
+
+        # Combine system and user prompts for Gemini
+        full_prompt = f"{system_prompt}\n\n{user_prompt}"
+
         try:
-            logger.info(f"Generating answer with {self.model}")
-            
-            response = openai.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt}
-                ],
+            logger.info(f"Generating answer with {self.model_name}")
+
+            # Configure generation parameters
+            generation_config = genai.types.GenerationConfig(
                 temperature=temp,
-                max_tokens=max_tok
+                max_output_tokens=max_tok,
             )
-            
-            answer = response.choices[0].message.content.strip()
-            
-            logger.success(f"Answer generated ({len(answer)} characters)")
-            
-            return answer
-            
+
+            response = self.model.generate_content(
+                full_prompt,
+                generation_config=generation_config
+            )
+
+            # Extract answer
+            if response and response.text:
+                answer = response.text.strip()
+                logger.success(f"Answer generated ({len(answer)} characters)")
+                return answer
+            else:
+                logger.error("No response text generated")
+                return None
+
         except Exception as e:
             logger.error(f"Error generating answer: {e}")
             return None
-    
+
     def _build_system_prompt(self) -> str:
         """Build system prompt for the LLM"""
         return """You are a helpful AI assistant that answers questions based on provided context from company documents.
@@ -94,15 +107,15 @@ Guidelines:
 - Use professional, clear language
 - Structure your answers logically
 - If multiple sources provide relevant info, synthesize them"""
-    
+
     def _build_user_prompt(self, question: str, context: str) -> str:
         """
         Build user prompt with question and context
-        
+
         Args:
             question: User's question
             context: Retrieved context
-            
+
         Returns:
             Formatted prompt
         """
@@ -115,14 +128,14 @@ Guidelines:
 Question: {question}
 
 Please provide a comprehensive answer based solely on the context above. If the context doesn't contain enough information, say so clearly."""
-        
+
         return prompt
-    
+
     def check_availability(self) -> bool:
         """
         Check if LLM is available and configured
-        
+
         Returns:
             True if available, False otherwise
         """
-        return self.api_key is not None and len(self.api_key) > 0
+        return self.model is not None
