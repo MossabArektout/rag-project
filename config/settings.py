@@ -35,7 +35,7 @@ class Settings(BaseSettings):
     similarity_threshold: float = Field(default=0.7)
     
     # LLM Configuration
-    llm_model: str = Field(default="gemini-pro")
+    llm_model: str = Field(default="gemini-1.5-flash")
     llm_temperature: float = Field(default=0.3)
     llm_max_tokens: int = Field(default=500)
     
