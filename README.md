@@ -205,17 +205,6 @@ LLM_MAX_TOKENS=500
 
 Full API documentation: http://localhost:8000/docs
 
-## 🎓 Learning Outcomes
-
-This project demonstrates:
-- **RAG Architecture** - Understanding retrieval-augmented generation
-- **Vector Databases** - Working with embeddings and similarity search
-- **LLM Integration** - Using modern LLMs via API
-- **Document Processing** - Extracting and chunking text from PDFs
-- **API Development** - Building REST APIs with FastAPI
-- **Frontend Development** - Creating interactive UIs with Streamlit
-- **System Design** - Architecting end-to-end ML applications
-
 ## 🐛 Troubleshooting
 
 **API won't start:**
