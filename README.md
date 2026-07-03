@@ -59,8 +59,8 @@ This is a **learning project** developed to understand and implement RAG (Retrie
 
 1. **Clone the repository**
 ```bash
-git clone https://github.com/MossabArektout/smart-internship-assistant.git
-cd smart-internship-assistant
+git clone https://github.com/MossabArektout/rag-project.git
+cd rag-project
 ```
 
 2. **Create virtual environment**
