@@ -192,7 +192,7 @@ class RAGEngine:
         
         answer_parts.append(
             "\n(Note: This response shows raw retrieved content. "
-            "For natural language answers, please configure a Google Gemini API key in the .env file.)"
+            "For natural language answers, please configure a Groq API key in the .env file.)"
         )
         
         return "\n".join(answer_parts)

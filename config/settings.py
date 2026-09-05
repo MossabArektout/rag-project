@@ -12,9 +12,7 @@ class Settings(BaseSettings):
     debug: bool = Field(default=True)
     
     # API Keys
-    google_api_key: Optional[str] = Field(default=None)
-    # openai_api_key: Optional[str] = Field(default=None)  # Not needed
-    # anthropic_api_key: Optional[str] = Field(default=None)
+    groq_api_key: Optional[str] = Field(default=None)
     
     # Paths
     upload_folder: str = Field(default="./uploads")
@@ -35,7 +33,7 @@ class Settings(BaseSettings):
     similarity_threshold: float = Field(default=0.7)
     
     # LLM Configuration
-    llm_model: str = Field(default="gemini-1.5-flash")
+    llm_model: str = Field(default="openai/gpt-oss-120b")
     llm_temperature: float = Field(default=0.3)
     llm_max_tokens: int = Field(default=500)
     

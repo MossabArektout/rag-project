@@ -1,33 +1,32 @@
 from typing import Optional
 from loguru import logger
 from config.settings import settings
-import google.generativeai as genai
+import groq
 
 
 class LLMClient:
-    """Client for LLM API (Google Gemini)"""
+    """Client for LLM API (Groq)"""
 
     def __init__(self, api_key: str = None, model: str = None):
         """
         Initialize LLM client
 
         Args:
-            api_key: Google API key
-            model: Model name to use (default: gemini-pro)
+            api_key: Groq API key
+            model: Model name to use (default: llama-3.3-70b-versatile)
         """
-        self.api_key = api_key or settings.google_api_key
+        self.api_key = api_key or settings.groq_api_key
         self.model_name = model or settings.llm_model
         self.model = None
 
         if not self.api_key:
-            logger.warning("Google API key not provided. LLM features will not work.")
+            logger.warning("Groq API key not provided. LLM features will not work.")
         else:
             try:
-                genai.configure(api_key=self.api_key)
-                self.model = genai.GenerativeModel(self.model_name)
+                self.model = groq.Groq(api_key=self.api_key)
                 logger.info(f"LLM client initialized with model: {self.model_name}")
             except Exception as e:
-                logger.error(f"Failed to initialize Gemini: {e}")
+                logger.error(f"Failed to initialize Groq: {e}")
                 self.model = None
 
     def generate_answer(
@@ -50,7 +49,7 @@ class LLMClient:
             Generated answer or None if failed
         """
         if not self.model:
-            logger.error("Cannot generate answer: Gemini model not configured")
+            logger.error("Cannot generate answer: Groq model not configured")
             return None
 
         temp = temperature or settings.llm_temperature
@@ -60,32 +59,39 @@ class LLMClient:
         system_prompt = self._build_system_prompt()
         user_prompt = self._build_user_prompt(question, context)
 
-        # Combine system and user prompts for Gemini
-        full_prompt = f"{system_prompt}\n\n{user_prompt}"
-
         try:
             logger.info(f"Generating answer with {self.model_name}")
 
-            # Configure generation parameters
-            generation_config = genai.types.GenerationConfig(
+            response = self.model.chat.completions.create(
+                model=self.model_name,
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
                 temperature=temp,
-                max_output_tokens=max_tok,
-            )
-
-            response = self.model.generate_content(
-                full_prompt,
-                generation_config=generation_config
+                max_tokens=max_tok,
             )
 
             # Extract answer
-            if response and response.text:
-                answer = response.text.strip()
+            answer = response.choices[0].message.content if response.choices else None
+
+            if answer:
+                answer = answer.strip()
                 logger.success(f"Answer generated ({len(answer)} characters)")
                 return answer
             else:
                 logger.error("No response text generated")
                 return None
 
+        except groq.RateLimitError as e:
+            logger.error(f"Groq rate limit exceeded: {e}")
+            return None
+        except groq.APIConnectionError as e:
+            logger.error(f"Groq network/connection error: {e}")
+            return None
+        except groq.APIStatusError as e:
+            logger.error(f"Groq API error (status {e.status_code}): {e}")
+            return None
         except Exception as e:
             logger.error(f"Error generating answer: {e}")
             return None
