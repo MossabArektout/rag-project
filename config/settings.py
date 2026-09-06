@@ -31,6 +31,11 @@ class Settings(BaseSettings):
     embedding_model: str = Field(default="all-MiniLM-L6-v2")
     top_k_results: int = Field(default=5)
     similarity_threshold: float = Field(default=0.7)
+
+    # Hybrid Search (BM25 + semantic, fused via Reciprocal Rank Fusion)
+    use_hybrid_search: bool = Field(default=True)
+    hybrid_candidate_pool_size: int = Field(default=20)
+    rrf_k: int = Field(default=60)
     
     # LLM Configuration
     llm_model: str = Field(default="openai/gpt-oss-120b")

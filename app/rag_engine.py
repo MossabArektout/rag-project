@@ -80,6 +80,12 @@ class RAGEngine:
                     top_k=top_k,
                     context_window=1
                 )
+            elif settings.use_hybrid_search:
+                chunks = self.retriever.retrieve_hybrid(
+                    query=question,
+                    top_k=top_k,
+                    document_ids=document_ids
+                )
             else:
                 chunks = self.retriever.retrieve(
                     query=question,

@@ -2,22 +2,24 @@ from typing import List, Dict, Optional, Tuple
 from loguru import logger
 from app.vector_db import VectorDatabase
 from app.embeddings import EmbeddingGenerator
+from app.bm25_index import BM25Index
 from config.settings import settings
 
 
 class AdvancedRetriever:
     """Advanced retrieval strategies for RAG"""
-    
+
     def __init__(self, vector_db: VectorDatabase, embedding_generator: EmbeddingGenerator):
         """
         Initialize retriever
-        
+
         Args:
             vector_db: Vector database instance
             embedding_generator: Embedding generator instance
         """
         self.vector_db = vector_db
         self.embedding_generator = embedding_generator
+        self.bm25_index = BM25Index(vector_db)
     
     def retrieve(
         self,
@@ -85,6 +87,99 @@ class AdvancedRetriever:
         
         return retrieved_chunks
     
+    def retrieve_hybrid(
+        self,
+        query: str,
+        top_k: int = None,
+        document_ids: Optional[List[str]] = None,
+        candidate_pool_size: int = None,
+        rrf_k: int = None
+    ) -> List[Dict]:
+        """
+        Hybrid retrieval: combine semantic search (ChromaDB embeddings) with
+        keyword search (BM25), merged via Reciprocal Rank Fusion (RRF).
+
+        Semantic search alone misses exact keyword/code matches (e.g. "Section 4.2"),
+        since embeddings compress meaning rather than literal terms. BM25 alone misses
+        paraphrases and synonyms. RRF combines both rankings without needing to
+        normalize/compare their very different score scales directly.
+
+        Args:
+            query: Search query
+            top_k: Number of final results to return
+            document_ids: Optional list of document IDs to filter
+            candidate_pool_size: How many candidates to pull from each method before fusion
+            rrf_k: RRF constant (higher = flatter weighting of rank position)
+
+        Returns:
+            List of fused chunks, ranked by combined RRF score
+        """
+        k = top_k or settings.top_k_results
+        pool = candidate_pool_size or settings.hybrid_candidate_pool_size
+        rrf_constant = rrf_k or settings.rrf_k
+
+        # Semantic candidates - no similarity threshold filtering here, since RRF
+        # needs the full rank ordering rather than a hard cutoff
+        query_embedding = self.embedding_generator.generate_embedding(query)
+        raw_results = self.vector_db.query(query_embeddings=[query_embedding], n_results=pool)
+
+        semantic_ranked: List[Tuple[str, Dict]] = []
+        for chunk_id, doc, metadata, distance in zip(
+            raw_results["ids"][0],
+            raw_results["documents"][0],
+            raw_results["metadatas"][0],
+            raw_results["distances"][0]
+        ):
+            if document_ids and metadata["document_id"] not in document_ids:
+                continue
+            semantic_ranked.append((chunk_id, {
+                "text": doc,
+                "metadata": metadata,
+                "similarity_score": round(1 - distance, 4)
+            }))
+
+        # Keyword candidates via BM25
+        keyword_ranked: List[Tuple[str, Dict]] = []
+        for item in self.bm25_index.search(query, top_k=pool):
+            if document_ids and item["metadata"]["document_id"] not in document_ids:
+                continue
+            keyword_ranked.append((item["chunk_id"], item))
+
+        # Reciprocal Rank Fusion: score = sum of 1/(rrf_k + rank) across both lists
+        fused_scores: Dict[str, float] = {}
+        chunk_lookup: Dict[str, Dict] = {}
+
+        for rank, (chunk_id, chunk) in enumerate(semantic_ranked, start=1):
+            fused_scores[chunk_id] = fused_scores.get(chunk_id, 0.0) + 1.0 / (rrf_constant + rank)
+            chunk_lookup.setdefault(chunk_id, chunk)
+
+        for rank, (chunk_id, chunk) in enumerate(keyword_ranked, start=1):
+            fused_scores[chunk_id] = fused_scores.get(chunk_id, 0.0) + 1.0 / (rrf_constant + rank)
+            chunk_lookup.setdefault(chunk_id, {
+                "text": chunk["text"],
+                "metadata": chunk["metadata"],
+                "similarity_score": 0.0  # keyword-only match, no semantic score available
+            })
+
+        if not fused_scores:
+            logger.warning("Hybrid search found no candidates from either method")
+            return []
+
+        ranked_ids = sorted(fused_scores, key=lambda cid: fused_scores[cid], reverse=True)[:k]
+
+        results = []
+        for chunk_id in ranked_ids:
+            chunk = dict(chunk_lookup[chunk_id])
+            chunk["rrf_score"] = round(fused_scores[chunk_id], 6)
+            results.append(chunk)
+
+        logger.info(
+            f"Hybrid search: {len(semantic_ranked)} semantic + {len(keyword_ranked)} keyword "
+            f"candidates -> {len(results)} fused results"
+        )
+
+        return results
+
     def retrieve_with_reranking(
         self,
         query: str,
