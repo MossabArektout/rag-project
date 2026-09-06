@@ -3,6 +3,7 @@ from loguru import logger
 from app.vector_db import VectorDatabase
 from app.embeddings import EmbeddingGenerator
 from app.bm25_index import BM25Index
+from app.reranker import CrossEncoderReranker
 from config.settings import settings
 
 
@@ -20,6 +21,14 @@ class AdvancedRetriever:
         self.vector_db = vector_db
         self.embedding_generator = embedding_generator
         self.bm25_index = BM25Index(vector_db)
+        self._cross_encoder: Optional[CrossEncoderReranker] = None
+
+    @property
+    def cross_encoder(self) -> CrossEncoderReranker:
+        """Lazily load the cross-encoder, since it's only needed when reranking is enabled"""
+        if self._cross_encoder is None:
+            self._cross_encoder = CrossEncoderReranker(settings.cross_encoder_model)
+        return self._cross_encoder
     
     def retrieve(
         self,
@@ -179,6 +188,46 @@ class AdvancedRetriever:
         )
 
         return results
+
+    def retrieve_hybrid_reranked(
+        self,
+        query: str,
+        top_k: int = None,
+        document_ids: Optional[List[str]] = None,
+        rerank_pool_size: int = None
+    ) -> List[Dict]:
+        """
+        Hybrid retrieval followed by cross-encoder re-ranking.
+
+        RRF fuses semantic + keyword rankings cheaply but only looks at rank
+        position, not the actual query-chunk relevance. The cross-encoder is far
+        more accurate but too slow to run over the whole corpus, so it only
+        re-scores the RRF candidate pool (default top 20) to pick the final top k.
+
+        Args:
+            query: Search query
+            top_k: Number of final results to return
+            document_ids: Optional list of document IDs to filter
+            rerank_pool_size: How many RRF candidates to feed into the cross-encoder
+
+        Returns:
+            List of chunks re-ranked by cross-encoder score
+        """
+        k = top_k or settings.top_k_results
+        pool_size = rerank_pool_size or settings.rerank_candidate_pool_size
+
+        candidates = self.retrieve_hybrid(
+            query=query,
+            top_k=pool_size,
+            document_ids=document_ids
+        )
+
+        if not candidates:
+            return []
+
+        logger.info(f"Re-ranking {len(candidates)} RRF candidates with cross-encoder")
+
+        return self.cross_encoder.rerank(query, candidates, top_k=k)
 
     def retrieve_with_reranking(
         self,

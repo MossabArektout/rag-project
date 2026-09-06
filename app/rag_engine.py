@@ -80,6 +80,12 @@ class RAGEngine:
                     top_k=top_k,
                     context_window=1
                 )
+            elif settings.use_hybrid_search and settings.use_cross_encoder_reranking:
+                chunks = self.retriever.retrieve_hybrid_reranked(
+                    query=question,
+                    top_k=top_k,
+                    document_ids=document_ids
+                )
             elif settings.use_hybrid_search:
                 chunks = self.retriever.retrieve_hybrid(
                     query=question,

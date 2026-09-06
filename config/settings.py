@@ -36,6 +36,11 @@ class Settings(BaseSettings):
     use_hybrid_search: bool = Field(default=True)
     hybrid_candidate_pool_size: int = Field(default=20)
     rrf_k: int = Field(default=60)
+
+    # Cross-Encoder Re-ranking (re-scores the RRF candidate pool, then truncates to top_k_results)
+    use_cross_encoder_reranking: bool = Field(default=True)
+    cross_encoder_model: str = Field(default="cross-encoder/ms-marco-MiniLM-L-6-v2")
+    rerank_candidate_pool_size: int = Field(default=20)
     
     # LLM Configuration
     llm_model: str = Field(default="openai/gpt-oss-120b")
